@@ -12,8 +12,8 @@
 # limitations under the License.
 #
 CFLAGS=-std=gnu99 -g -O3 -fomit-frame-pointer -fno-unroll-loops -Wall -Wstrict-prototypes -Wmissing-prototypes -Wshadow -Wmissing-declarations -Wnested-externs -Wpointer-arith -W -Wno-unused-parameter -Werror -pthread -Wno-tautological-compare
-LDFLAGS=-g -O3 -static -pthread
-LDLIBS=-lrt -lm
+LDFLAGS=-g -O3 -pthread
+LDLIBS=-lrt -lm -lnuma -L/user-environment/env/default/lib64 -lcudart_static -ldl
 
 ARCH ?= $(shell uname -m)
 
@@ -36,7 +36,7 @@ clean:
 .c.s:
 	$(CC) $(CFLAGS) -S -c $<
 
-multichase: multichase.o permutation.o arena.o br_asm.o util.o
+multichase: multichase.o permutation.o arena.o br_asm.o util.o kernels.o
 
 multiload: multiload.o permutation.o arena.o util.o
 
@@ -58,3 +58,5 @@ permutation.o: permutation.h
 util.o: util.h
 fairness.o: cpu_util.h expand.h timer.h
 pingpong.o: cpu_util.h timer.h
+kernels.o:
+	nvcc -g -arch=sm_90 --compiler-options '-fPIC' -c kernels.cu -o kernels.o -cudart static

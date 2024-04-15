@@ -24,6 +24,8 @@
 #include <sys/time.h>
 #include <time.h>
 #include <unistd.h>
+#include <numa.h>
+#include <numaif.h>
 
 #include "arena.h"
 #include "br_asm.h"
@@ -92,6 +94,8 @@ typedef union {
     int branch_chunk_size;
   } x;
 } per_thread_t;
+
+void chase_simple_kernel_gpu(per_thread_t *t);
 
 int always_zero;
 
@@ -307,6 +311,15 @@ static const chase_t chases[] = {
         .parallelism = 1,
     },
     {
+        .fn = chase_simple_kernel_gpu,
+        .base_object_size = sizeof(void *),
+        .name = "gpu",
+        .usage1 = "gpu",
+        .usage2 = "latency of gpu",
+        .requires_arg = 0,
+        .parallelism = 1,
+    },
+    {
         .fn = chase_work,
         .base_object_size = sizeof(void *),
         .name = "work",
@@ -412,7 +425,10 @@ static pthread_cond_t wait_cond = PTHREAD_COND_INITIALIZER;
 static size_t nr_to_startup;
 static int set_thread_affinity = 1;
 
+void cudaFree(void *);
+
 static void *thread_start(void *data) {
+  cudaFree(0);
   per_thread_t *args = data;
 
   // ensure every thread has a different RNG
@@ -833,7 +849,13 @@ int main(int argc, char **argv) {
   generate_chase_mixer(&genchase_args, nr_threads * chase->parallelism);
 
   // generate the chases by launching multiple threads
-  if (use_malloc) {
+  char *numa_string = getenv("NUMA_ALLOC");
+  if (numa_string != NULL) {
+    int numa_node = atoi(numa_string);
+    genchase_args.arena = (char *)numa_alloc_onnode(genchase_args.total_memory + offset, numa_node) +
+        offset;
+  }
+  else if (use_malloc) {
     genchase_args.arena = (char *)malloc(genchase_args.total_memory + offset) +
         offset;
     if (!genchase_args.arena) {
@@ -915,7 +937,7 @@ int main(int argc, char **argv) {
       timestamp();
       for (i = 0; i < nr_threads; ++i) {
         double z = time_delta / (double)cur_samples[i];
-        printf(" %6.*f", z < 100. ? 3 : 1, z);
+        printf(" %6.*f, %ld", z < 100. ? 3 : 1, z, sum);
       }
     }
 
